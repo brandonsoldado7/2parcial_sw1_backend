@@ -1,22 +1,26 @@
 # 🧠 Backend generado automáticamente 🚀
 
 **Paquete base:** `com.example.demo`
-**Fecha de generación:** 2025-11-12 16:37:41
+**Fecha de generación:** 2025-11-14 11:01:08
 
 ---
 
 ## 📦 Entidades generadas:
-- **Electrodomestico**
+- **ItemPedido**
     (hereda de null)
-- **Lavadora**
-    (hereda de Electrodomestico)
-- **Refrigerador**
-    (hereda de Electrodomestico)
-- **Tipo**
+- **Pedido**
     (hereda de null)
-- **Material**
+- **Circulo**
+    (hereda de Figura)
+- **Figura**
     (hereda de null)
-- **Accesorio**
+- **BaseDeDatos**
+    (hereda de null)
+- **Reporte**
+    (hereda de null)
+- **Tarea**
+    (hereda de null)
+- **DependenciaTarea**
     (hereda de null)
 
 ---

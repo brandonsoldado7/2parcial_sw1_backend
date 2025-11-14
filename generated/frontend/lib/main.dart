@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 // appName: SchoolApp
 // ==========================================================
 
-import 'screens/electrodomestico_list_screen.dart';
-import 'screens/lavadora_list_screen.dart';
-import 'screens/refrigerador_list_screen.dart';
-import 'screens/tipo_list_screen.dart';
-import 'screens/material_list_screen.dart';
-import 'screens/accesorio_list_screen.dart';
+import 'screens/item_pedido_list_screen.dart';
+import 'screens/pedido_list_screen.dart';
+import 'screens/circulo_list_screen.dart';
+import 'screens/figura_list_screen.dart';
+import 'screens/base_de_datos_list_screen.dart';
+import 'screens/reporte_list_screen.dart';
+import 'screens/tarea_list_screen.dart';
+import 'screens/dependencia_tarea_list_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -48,22 +50,26 @@ class _AppHomeState extends State<AppHome> {
 
   // 🔹 Lista de pantallas generadas dinámicamente
   final List<Widget> _screens = const [
-    ElectrodomesticoListScreen(),
-    LavadoraListScreen(),
-    RefrigeradorListScreen(),
-    TipoListScreen(),
-    MaterialListScreen(),
-    AccesorioListScreen(),
+    ItemPedidoListScreen(),
+    PedidoListScreen(),
+    CirculoListScreen(),
+    FiguraListScreen(),
+    BaseDeDatosListScreen(),
+    ReporteListScreen(),
+    TareaListScreen(),
+    DependenciaTareaListScreen(),
   ];
 
   // 🔹 Lista de nombres de entidades (para mostrar en el Drawer)
   final List<String> _labels = const [
-    'Electrodomesticos',
-    'Lavadoras',
-    'Refrigeradors',
-    'Tipos',
-    'Materials',
-    'Accesorios',
+    'ItemPedidos',
+    'Pedidos',
+    'Circulos',
+    'Figuras',
+    'BaseDeDatoss',
+    'Reportes',
+    'Tareas',
+    'DependenciaTareas',
   ];
 
   @override

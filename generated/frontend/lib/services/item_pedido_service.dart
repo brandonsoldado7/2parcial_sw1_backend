@@ -1,0 +1,34 @@
+import '../models/item_pedido.dart';
+import '../utils/api_client.dart';
+
+class ItemPedidoService {
+  final _api = ApiClient();
+  final _endpoint = 'itempedido';
+
+  /// 🔹 Obtener todos los registros
+  Future<List<ItemPedido>> getAll() async {
+    final data = await _api.getList(_endpoint);
+    return data.map<ItemPedido>((e) => ItemPedido.fromJson(e)).toList();
+  }
+
+  /// 🔹 Obtener registro por ID
+  Future<ItemPedido> getById(int id) async {
+    final data = await _api.getById(_endpoint, id);
+    return ItemPedido.fromJson(data);
+  }
+
+  /// 🔹 Crear nuevo registro
+  Future<void> create(ItemPedido item) async {
+    await _api.create(_endpoint, item.toJson());
+  }
+
+  /// 🔹 Actualizar registro existente
+  Future<void> update(int id, ItemPedido item) async {
+    await _api.update(_endpoint, id, item.toJson());
+  }
+
+  /// 🔹 Eliminar registro
+  Future<void> delete(int id) async {
+    await _api.delete(_endpoint, id);
+  }
+}
