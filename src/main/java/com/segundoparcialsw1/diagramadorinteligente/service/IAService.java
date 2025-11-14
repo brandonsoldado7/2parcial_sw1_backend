@@ -30,149 +30,78 @@ public class IAService {
 
 
    
-private static final String GOJS_PROMPT_INSTRUCTION_GENERAR = """
-
-Eres un experto en UML y diagramas de clase con GoJS.
-El usuario enviará un prompt en texto libre, y tu tarea es devolver
-únicamente un JSON válido que represente un modelo GoJS de clases.
-
-***REGLAS:***
-1. Genera un objeto con "class": "GraphLinksModel".
-2. Incluye "nodeDataArray" (entidades) y "linkDataArray" (relaciones).
-3. Cada entidad debe tener:
-    - "key"
-    - "name" (nombre de la clase en español)
-    - "attributes" (array de objetos con las siguientes propiedades):
-        * "name": nombre del atributo en español
-        * "type": tipo de dato (**solo puede ser uno de los siguientes valores permitidos**):
-              String, int, boolean, float, double, char, Date, Time
-        * "scope": visibilidad ("public" o "private")
-          ➜ **Por defecto, todos los atributos deben ser privados ("private")**
-        * "text": representación textual (ej. "- id: int")
-    - "loc" (coordenadas de posición en string, **OBLIGATORIO** para evitar superposición. Ejemplo: "-37 -109")
-
-4. **REGLAS OBLIGATORIAS DE ATRIBUTOS ID:**
-    a. Todas las clases deben tener un atributo "id" obligatorio con tipo "int".
-       Ejemplo:
-       {
-         "name": "id",
-         "type": "int",
-         "scope": "private",
-         "text": "- id: int"
-       }
-    b. Las clases intermedias de asociación deben tener **dos atributos de id** que representen las claves foráneas de las clases relacionadas.
-       Ejemplo: si la asociación es entre "Cliente" y "Pedido", la clase intermedia debe tener:
-       - "id_cliente": int
-       - "id_pedido": int
-       Estos dos atributos actúan como clave compuesta.
-    c. En las demás clases (no intermedias) no deben aparecer claves foráneas; solo la clave primaria propia.
-
-5. **REGLAS ESPECIALES PARA CLASES DE ASOCIACIÓN:**
-    a. Deben generarse TRES nodos:
-       - El nodo de la Clase de Asociación (ej. "Clase_Intermedia").
-       - Un nodo intermedio de tipo "AssociationPoint" (sin nombre ni atributos).
-       - Los dos nodos de las clases base (ej. "A", "B").
-    b. El nodo de la Clase de Asociación (ej. "Clase_Intermedia") debe tener el campo "relationshipName" con el nombre de la asociación.
-    c. El nodo intermedio debe tener la propiedad "category": "AssociationPoint".
-
-6. Cada relación debe tener:
-    - "relationshipType"
-    - "relationshipName" (nombre de la relación en español). ESTE CAMPO ES OBLIGATORIO PARA TODAS LAS ASOCIACIONES.
-    - "fromMultiplicity" (Opcional en Composición/Agregación)
-    - "toMultiplicity" (Opcional en Composición/Agregación)
-    - "from"
-    - "to"
-    - "points" (array de números)
-    - "routing" (Valor **2**, para forzar un enrutamiento ortogonal/recto en todos los links)
-
-7. **CARDINALIDADES PERMITIDAS:**
-   Los únicos valores válidos para "fromMultiplicity" y "toMultiplicity" son:
-   ["1..1", "0..1", "1..*", "0..*"]
-   ➜ Cualquier otro valor será inválido.
-
-8. **REGLA PARA ASOCIACIONES RECURSIVAS:**
-   En la ASOCIACIÓN SIMPLE RECURSIVA (cuando 'from' y 'to' son la misma clave),
-   el array 'points' DEBE SER OMITIDO para permitir que el algoritmo de GoJS genere automáticamente el bucle limpio.
-
-9. **REGLAS ESPECIALES PARA LINKS DE CLASE DE ASOCIACIÓN:**
-    a. Los links que unen las clases base al nodo "AssociationPoint" deben tener "category": "AssociationClassLink" y "dashed": false (línea sólida).
-    b. El link que une el nodo "AssociationPoint" a la Clase de Asociación debe tener "category": "AssociationClassLink" y "dashed": true (línea punteada).
-    c. NINGÚN link generado en el contexto de una Clase de Asociación debe llevar el campo "relationshipName".
-    d. Los links deben omitir 'relationshipType' para que GoJS aplique el estilo por 'category'.
-    e. **Los links de Clase de Asociación (todos los tres) DEBEN OMITIR los campos 'fromMultiplicity' y 'toMultiplicity'.**
-
-10. Todo el JSON debe estar en español, incluidos nombres de clases, atributos y relaciones.
-
-***GUÍA DE TIPOS DE RELACIÓN GoJS-UML (Para crear o modificar links):***
-El campo "relationshipType" es clave para definir el tipo de enlace. Siempre debe usarse uno de los siguientes valores:
-
-| Tipo GoJS-UML | "relationshipType" | Apariencia | Extremo 'from' | Extremo 'to' |
-| :--- | :--- | :--- | :--- | :--- |
-| **Herencia** | "Inheritance" | Línea sólida con flecha triangular vacía. | Subclase | Superclase |
-| **Realización** | "Realization" | Línea discontinua con flecha triangular vacía. | Clase que implementa | Interfaz |
-| **Composición** | "Composition" | Línea sólida con diamante sólido (negro) **solo en el extremo 'from'**. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (contenida) |
-| **Agregación** | "Aggregation" | Línea sólida con diamante vacío (blanco) **solo en el extremo 'from'**. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (agregada) |
-| **Dependencia** | "Dependency" | Línea discontinua con flecha abierta. **relationshipName fijo: <<Dependency>>** | Clase dependiente/cliente | Clase proveedora/servicio |
-| **Uso** | "Usage" | Mismo que Dependencia, pero generalmente con 'relationshipName': "<<use>>". | Clase que usa | Recurso usado |
-| **Asociación** | "Association" | Línea sólida sin puntas especiales. Usar 'fromMultiplicity' y 'toMultiplicity' para cardinalidad. EL CAMPO "relationshipName" DEBE ESTAR PRESENTE. | Cualquiera | Cualquiera |
-
-**NOTA IMPORTANTE SOBRE COMPOSICIÓN Y AGREGACIÓN:**
-➜ El rombo (lleno o vacío) **solo debe aparecer en el extremo 'from'**, nunca en ambos lados.
-➜ Si el generador detecta rombos duplicados, debe corregir automáticamente para que solo el extremo 'from' lo conserve.
-
-**Nota sobre Asociación:** Si la asociación es direccional, se debe usar una plantilla GoJS con flecha para ese tipo de link, pero el relationshipType base sigue siendo "Association". El JSON solo necesita el relationshipType correcto para que GoJS aplique el estilo.
-
-""";
-
-
-        private static final String GOJS_PROMPT_INSTRUCTION_MODIFICAR = """
+    private static final String GOJS_PROMPT_INSTRUCTION_GENERAR = """
         Eres un experto en UML y diagramas de clase con GoJS.
-        El usuario enviará un prompt en texto libre y un JSON existente (modelo GoJS).
-        Tu tarea es devolver únicamente el JSON modificado siguiendo las instrucciones del prompt.
+        El usuario enviará un prompt en texto libre, y tu tarea es devolver
+        únicamente un JSON válido que represente un modelo GoJS de clases.
 
         ***REGLAS:***
         1. Genera un objeto con "class": "GraphLinksModel".
         2. Incluye "nodeDataArray" (entidades) y "linkDataArray" (relaciones).
         3. Cada entidad debe tener:
-        - "key"
-        - "name" (nombre de la clase en español)
-        - "attributes" (array de objetos con las siguientes propiedades):
-            * "name": nombre del atributo en español
-            * "type": tipo de dato (ej. "int", "string")
-            * "scope": visibilidad ("public" o "private")
-            * "text": representación textual (ej. "+ id: int")
-        - "loc" (coordenadas de posición en string, **OBLIGATORIO** para evitar superposición. Ejemplo: "-37 -109")
+            - "key"
+            - "name" (nombre de la clase en español)
+            - "attributes" (array de objetos con las siguientes propiedades):
+                * "name": nombre del atributo en español
+                * "type": tipo de dato (**solo puede ser uno de los siguientes valores permitidos**):
+                    String, int, boolean, float, double, char, Date
+                * "scope": visibilidad ("public" o "private")
+                ➜ **Por defecto, todos los atributos deben ser privados ("private")**
+                * "text": representación textual (ej. "- id: int")
+            - "loc" (coordenadas de posición en string, **OBLIGATORIO** para evitar superposición. Ejemplo: "-37 -109")
 
-        4. **REGLAS ESPECIALES PARA CLASES DE ASOCIACIÓN:**
+        4. **REGLAS OBLIGATORIAS DE ATRIBUTOS ID:**
+            a. Todas las clases deben tener un atributo "id" obligatorio con tipo "int".
+            Ejemplo:
+            {
+                "name": "id",
+                "type": "int",
+                "scope": "private",
+                "text": "- id: int"
+            }
+            b. Las clases intermedias de asociación deben tener **dos atributos de id** que representen las claves foráneas de las clases relacionadas.
+            Ejemplo: si la asociación es entre "Cliente" y "Pedido", la clase intermedia debe tener:
+            - "id_cliente": int
+            - "id_pedido": int
+            Estos dos atributos actúan como clave compuesta.
+            c. En las demás clases (no intermedias) no deben aparecer claves foráneas; solo la clave primaria propia.
+
+        5. **REGLAS ESPECIALES PARA CLASES DE ASOCIACIÓN:**
             a. Deben generarse TRES nodos:
             - El nodo de la Clase de Asociación (ej. "Clase_Intermedia").
             - Un nodo intermedio de tipo "AssociationPoint" (sin nombre ni atributos).
             - Los dos nodos de las clases base (ej. "A", "B").
             b. El nodo de la Clase de Asociación (ej. "Clase_Intermedia") debe tener el campo "relationshipName" con el nombre de la asociación.
             c. El nodo intermedio debe tener la propiedad "category": "AssociationPoint".
-        
-        5. Cada relación debe tener:
-        - "relationshipType"
-        - "relationshipName" (nombre de la relación en español). ESTE CAMPO ES OBLIGATORIO PARA TODAS LAS ASOCIACIONES.
-        - "fromMultiplicity" (Opcional en Composición/Agregación)
-        - "toMultiplicity" (Opcional en Composición/Agregación)
-        - "from"
-        - "to"
-        - "points" (array de números)
-        - "routing" (Valor **2**, para forzar un enrutamiento ortogonal/recto en todos los links)
-        
-        // REGLA NUEVA:
-        e. **Para la ASOCIACIÓN SIMPLE RECURSIVA (cuando 'from' y 'to' son la misma clave), el array 'points' DEBE SER OMITIDO** para permitir que el algoritmo de 'routing' de GoJS genere automáticamente el bucle limpio alrededor de la clase.
 
-        6. **REGLAS ESPECIALES PARA LINKS DE CLASE DE ASOCIACIÓN:**
-            a. Los links que unen las clases base al nodo "AssociationPoint" deben tener "category": "AssociationClassLink" y "dashed": false (Línea sólida).
-            b. El link que une el nodo "AssociationPoint" a la Clase de Asociación debe tener "category": "AssociationClassLink" y "dashed": true (Línea punteada).
+        6. Cada relación debe tener:
+            - "relationshipType"
+            - "relationshipName" (nombre de la relación en español). ESTE CAMPO ES OBLIGATORIO PARA TODAS LAS ASOCIACIONES.
+            - "fromMultiplicity" (Opcional en Composición/Agregación)
+            - "toMultiplicity" (Opcional en Composición/Agregación)
+            - "from"
+            - "to"
+            - "points" (array de números)
+            - "routing" (Valor **2**, para forzar un enrutamiento ortogonal/recto en todos los links)
+
+        7. **CARDINALIDADES PERMITIDAS:**
+        Los únicos valores válidos para "fromMultiplicity" y "toMultiplicity" son:
+        ["1..1", "0..1", "1..*", "0..*"]
+        ➜ Cualquier otro valor será inválido.
+
+        8. **REGLA PARA ASOCIACIONES RECURSIVAS:**
+        En la ASOCIACIÓN SIMPLE RECURSIVA (cuando 'from' y 'to' son la misma clave),
+        el array 'points' DEBE SER OMITIDO para permitir que el algoritmo de GoJS genere automáticamente el bucle limpio.
+
+        9. **REGLAS ESPECIALES PARA LINKS DE CLASE DE ASOCIACIÓN:**
+            a. Los links que unen las clases base al nodo "AssociationPoint" deben tener "category": "AssociationClassLink" y "dashed": false (línea sólida).
+            b. El link que une el nodo "AssociationPoint" a la Clase de Asociación debe tener "category": "AssociationClassLink" y "dashed": true (línea punteada).
             c. NINGÚN link generado en el contexto de una Clase de Asociación debe llevar el campo "relationshipName".
             d. Los links deben omitir 'relationshipType' para que GoJS aplique el estilo por 'category'.
             e. **Los links de Clase de Asociación (todos los tres) DEBEN OMITIR los campos 'fromMultiplicity' y 'toMultiplicity'.**
 
-        7. Todo el JSON debe estar en español, incluidos nombres de clases, atributos y relaciones.
-        8. No devuelvas nada más que el JSON, sin explicaciones ni comentarios.
+        10. Todo el JSON debe estar en español, incluidos nombres de clases, atributos y relaciones.
+
         ***GUÍA DE TIPOS DE RELACIÓN GoJS-UML (Para crear o modificar links):***
         El campo "relationshipType" es clave para definir el tipo de enlace. Siempre debe usarse uno de los siguientes valores:
 
@@ -180,14 +109,113 @@ El campo "relationshipType" es clave para definir el tipo de enlace. Siempre deb
         | :--- | :--- | :--- | :--- | :--- |
         | **Herencia** | "Inheritance" | Línea sólida con flecha triangular vacía. | Subclase | Superclase |
         | **Realización** | "Realization" | Línea discontinua con flecha triangular vacía. | Clase que implementa | Interfaz |
-        | **Composición** | "Composition" | Línea sólida con diamante sólido (negro) en 'from'. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (contenida) |
-        | **Agregación** | "Aggregation" | Línea sólida con diamante vacío (blanco) en 'from'. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (agregada) |
+        | **Composición** | "Composition" | Línea sólida con diamante sólido (negro) **solo en el extremo 'from'**. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (contenida) |
+        | **Agregación** | "Aggregation" | Línea sólida con diamante vacío (blanco) **solo en el extremo 'from'**. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (agregada) |
         | **Dependencia** | "Dependency" | Línea discontinua con flecha abierta. **relationshipName fijo: <<Dependency>>** | Clase dependiente/cliente | Clase proveedora/servicio |
         | **Uso** | "Usage" | Mismo que Dependencia, pero generalmente con 'relationshipName': "<<use>>". | Clase que usa | Recurso usado |
         | **Asociación** | "Association" | Línea sólida sin puntas especiales. Usar 'fromMultiplicity' y 'toMultiplicity' para cardinalidad. EL CAMPO "relationshipName" DEBE ESTAR PRESENTE. | Cualquiera | Cualquiera |
 
+        **NOTA IMPORTANTE SOBRE COMPOSICIÓN Y AGREGACIÓN:**
+        ➜ El rombo (lleno o vacío) **solo debe aparecer en el extremo 'from'**, nunca en ambos lados.
+        ➜ Si el generador detecta rombos duplicados, debe corregir automáticamente para que solo el extremo 'from' lo conserve.
+
         **Nota sobre Asociación:** Si la asociación es direccional, se debe usar una plantilla GoJS con flecha para ese tipo de link, pero el relationshipType base sigue siendo "Association". El JSON solo necesita el relationshipType correcto para que GoJS aplique el estilo.
-                            """;
+
+        """;
+
+
+        private static final String GOJS_PROMPT_INSTRUCTION_MODIFICAR = """
+        Eres un experto en UML y diagramas de clase con GoJS.
+        El usuario enviará un prompt en texto libre y un JSON existente (modelo GoJS).
+        Tu tarea es devolver únicamente el JSON modificado siguiendo las instrucciones del prompt.
+
+                ***REGLAS:***
+        1. Genera un objeto con "class": "GraphLinksModel".
+        2. Incluye "nodeDataArray" (entidades) y "linkDataArray" (relaciones).
+        3. Cada entidad debe tener:
+            - "key"
+            - "name" (nombre de la clase en español)
+            - "attributes" (array de objetos con las siguientes propiedades):
+                * "name": nombre del atributo en español
+                * "type": tipo de dato (**solo puede ser uno de los siguientes valores permitidos**):
+                    String, int, boolean, float, double, char, Date
+                * "scope": visibilidad ("public" o "private")
+                ➜ **Por defecto, todos los atributos deben ser privados ("private")**
+                * "text": representación textual (ej. "- id: int")
+            - "loc" (coordenadas de posición en string, **OBLIGATORIO** para evitar superposición. Ejemplo: "-37 -109")
+
+        4. **REGLAS OBLIGATORIAS DE ATRIBUTOS ID:**
+            a. Todas las clases deben tener un atributo "id" obligatorio con tipo "int".
+            Ejemplo:
+            {
+                "name": "id",
+                "type": "int",
+                "scope": "private",
+                "text": "- id: int"
+            }
+            b. Las clases intermedias de asociación deben tener **dos atributos de id** que representen las claves foráneas de las clases relacionadas.
+            Ejemplo: si la asociación es entre "Cliente" y "Pedido", la clase intermedia debe tener:
+            - "id_cliente": int
+            - "id_pedido": int
+            Estos dos atributos actúan como clave compuesta.
+            c. En las demás clases (no intermedias) no deben aparecer claves foráneas; solo la clave primaria propia.
+
+        5. **REGLAS ESPECIALES PARA CLASES DE ASOCIACIÓN:**
+            a. Deben generarse TRES nodos:
+            - El nodo de la Clase de Asociación (ej. "Clase_Intermedia").
+            - Un nodo intermedio de tipo "AssociationPoint" (sin nombre ni atributos).
+            - Los dos nodos de las clases base (ej. "A", "B").
+            b. El nodo de la Clase de Asociación (ej. "Clase_Intermedia") debe tener el campo "relationshipName" con el nombre de la asociación.
+            c. El nodo intermedio debe tener la propiedad "category": "AssociationPoint".
+
+        6. Cada relación debe tener:
+            - "relationshipType"
+            - "relationshipName" (nombre de la relación en español). ESTE CAMPO ES OBLIGATORIO PARA TODAS LAS ASOCIACIONES.
+            - "fromMultiplicity" (Opcional en Composición/Agregación)
+            - "toMultiplicity" (Opcional en Composición/Agregación)
+            - "from"
+            - "to"
+            - "points" (array de números)
+            - "routing" (Valor **2**, para forzar un enrutamiento ortogonal/recto en todos los links)
+
+        7. **CARDINALIDADES PERMITIDAS:**
+        Los únicos valores válidos para "fromMultiplicity" y "toMultiplicity" son:
+        ["1..1", "0..1", "1..*", "0..*"]
+        ➜ Cualquier otro valor será inválido.
+
+        8. **REGLA PARA ASOCIACIONES RECURSIVAS:**
+        En la ASOCIACIÓN SIMPLE RECURSIVA (cuando 'from' y 'to' son la misma clave),
+        el array 'points' DEBE SER OMITIDO para permitir que el algoritmo de GoJS genere automáticamente el bucle limpio.
+
+        9. **REGLAS ESPECIALES PARA LINKS DE CLASE DE ASOCIACIÓN:**
+            a. Los links que unen las clases base al nodo "AssociationPoint" deben tener "category": "AssociationClassLink" y "dashed": false (línea sólida).
+            b. El link que une el nodo "AssociationPoint" a la Clase de Asociación debe tener "category": "AssociationClassLink" y "dashed": true (línea punteada).
+            c. NINGÚN link generado en el contexto de una Clase de Asociación debe llevar el campo "relationshipName".
+            d. Los links deben omitir 'relationshipType' para que GoJS aplique el estilo por 'category'.
+            e. **Los links de Clase de Asociación (todos los tres) DEBEN OMITIR los campos 'fromMultiplicity' y 'toMultiplicity'.**
+
+        10. Todo el JSON debe estar en español, incluidos nombres de clases, atributos y relaciones.
+
+        ***GUÍA DE TIPOS DE RELACIÓN GoJS-UML (Para crear o modificar links):***
+        El campo "relationshipType" es clave para definir el tipo de enlace. Siempre debe usarse uno de los siguientes valores:
+
+        | Tipo GoJS-UML | "relationshipType" | Apariencia | Extremo 'from' | Extremo 'to' |
+        | :--- | :--- | :--- | :--- | :--- |
+        | **Herencia** | "Inheritance" | Línea sólida con flecha triangular vacía. | Subclase | Superclase |
+        | **Realización** | "Realization" | Línea discontinua con flecha triangular vacía. | Clase que implementa | Interfaz |
+        | **Composición** | "Composition" | Línea sólida con diamante sólido (negro) **solo en el extremo 'from'**. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (contenida) |
+        | **Agregación** | "Aggregation" | Línea sólida con diamante vacío (blanco) **solo en el extremo 'from'**. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (agregada) |
+        | **Dependencia** | "Dependency" | Línea discontinua con flecha abierta. **relationshipName fijo: <<Dependency>>** | Clase dependiente/cliente | Clase proveedora/servicio |
+        | **Uso** | "Usage" | Mismo que Dependencia, pero generalmente con 'relationshipName': "<<use>>". | Clase que usa | Recurso usado |
+        | **Asociación** | "Association" | Línea sólida sin puntas especiales. Usar 'fromMultiplicity' y 'toMultiplicity' para cardinalidad. EL CAMPO "relationshipName" DEBE ESTAR PRESENTE. | Cualquiera | Cualquiera |
+
+        **NOTA IMPORTANTE SOBRE COMPOSICIÓN Y AGREGACIÓN:**
+        ➜ El rombo (lleno o vacío) **solo debe aparecer en el extremo 'from'**, nunca en ambos lados.
+        ➜ Si el generador detecta rombos duplicados, debe corregir automáticamente para que solo el extremo 'from' lo conserve.
+
+        **Nota sobre Asociación:** Si la asociación es direccional, se debe usar una plantilla GoJS con flecha para ese tipo de link, pero el relationshipType base sigue siendo "Association". El JSON solo necesita el relationshipType correcto para que GoJS aplique el estilo.
+
+        """;
 
     private List<Map<String, String>> createContentParts(String text) {
         return List.of(Map.of("text", text));
@@ -321,49 +349,73 @@ El campo "relationshipType" es clave para definir el tipo de enlace. Siempre deb
         Tu tarea es analizar la imagen y devolver ÚNICAMENTE un JSON válido que represente
         el modelo en formato GoJS.
 
-         ***REGLAS:***
+                ***REGLAS:***
         1. Genera un objeto con "class": "GraphLinksModel".
         2. Incluye "nodeDataArray" (entidades) y "linkDataArray" (relaciones).
         3. Cada entidad debe tener:
-        - "key"
-        - "name" (nombre de la clase en español)
-        - "attributes" (array de objetos con las siguientes propiedades):
-            * "name": nombre del atributo en español
-            * "type": tipo de dato (ej. "int", "string")
-            * "scope": visibilidad ("public" o "private")
-            * "text": representación textual (ej. "+ id: int")
-        - "loc" (coordenadas de posición en string, **OBLIGATORIO** para evitar superposición. Ejemplo: "-37 -109")
+            - "key"
+            - "name" (nombre de la clase en español)
+            - "attributes" (array de objetos con las siguientes propiedades):
+                * "name": nombre del atributo en español
+                * "type": tipo de dato (**solo puede ser uno de los siguientes valores permitidos**):
+                    String, int, boolean, float, double, char, Date
+                * "scope": visibilidad ("public" o "private")
+                ➜ **Por defecto, todos los atributos deben ser privados ("private")**
+                * "text": representación textual (ej. "- id: int")
+            - "loc" (coordenadas de posición en string, **OBLIGATORIO** para evitar superposición. Ejemplo: "-37 -109")
 
-        4. **REGLAS ESPECIALES PARA CLASES DE ASOCIACIÓN:**
+        4. **REGLAS OBLIGATORIAS DE ATRIBUTOS ID:**
+            a. Todas las clases deben tener un atributo "id" obligatorio con tipo "int".
+            Ejemplo:
+            {
+                "name": "id",
+                "type": "int",
+                "scope": "private",
+                "text": "- id: int"
+            }
+            b. Las clases intermedias de asociación deben tener **dos atributos de id** que representen las claves foráneas de las clases relacionadas.
+            Ejemplo: si la asociación es entre "Cliente" y "Pedido", la clase intermedia debe tener:
+            - "id_cliente": int
+            - "id_pedido": int
+            Estos dos atributos actúan como clave compuesta.
+            c. En las demás clases (no intermedias) no deben aparecer claves foráneas; solo la clave primaria propia.
+
+        5. **REGLAS ESPECIALES PARA CLASES DE ASOCIACIÓN:**
             a. Deben generarse TRES nodos:
             - El nodo de la Clase de Asociación (ej. "Clase_Intermedia").
             - Un nodo intermedio de tipo "AssociationPoint" (sin nombre ni atributos).
             - Los dos nodos de las clases base (ej. "A", "B").
             b. El nodo de la Clase de Asociación (ej. "Clase_Intermedia") debe tener el campo "relationshipName" con el nombre de la asociación.
             c. El nodo intermedio debe tener la propiedad "category": "AssociationPoint".
-        
-        5. Cada relación debe tener:
-        - "relationshipType"
-        - "relationshipName" (nombre de la relación en español). ESTE CAMPO ES OBLIGATORIO PARA TODAS LAS ASOCIACIONES.
-        - "fromMultiplicity" (Opcional en Composición/Agregación)
-        - "toMultiplicity" (Opcional en Composición/Agregación)
-        - "from"
-        - "to"
-        - "points" (array de números)
-        - "routing" (Valor **2**, para forzar un enrutamiento ortogonal/recto en todos los links)
-        
-        // REGLA NUEVA:
-        e. **Para la ASOCIACIÓN SIMPLE RECURSIVA (cuando 'from' y 'to' son la misma clave), el array 'points' DEBE SER OMITIDO** para permitir que el algoritmo de 'routing' de GoJS genere automáticamente el bucle limpio alrededor de la clase.
 
-        6. **REGLAS ESPECIALES PARA LINKS DE CLASE DE ASOCIACIÓN:**
-            a. Los links que unen las clases base al nodo "AssociationPoint" deben tener "category": "AssociationClassLink" y "dashed": false (Línea sólida).
-            b. El link que une el nodo "AssociationPoint" a la Clase de Asociación debe tener "category": "AssociationClassLink" y "dashed": true (Línea punteada).
+        6. Cada relación debe tener:
+            - "relationshipType"
+            - "relationshipName" (nombre de la relación en español). ESTE CAMPO ES OBLIGATORIO PARA TODAS LAS ASOCIACIONES.
+            - "fromMultiplicity" (Opcional en Composición/Agregación)
+            - "toMultiplicity" (Opcional en Composición/Agregación)
+            - "from"
+            - "to"
+            - "points" (array de números)
+            - "routing" (Valor **2**, para forzar un enrutamiento ortogonal/recto en todos los links)
+
+        7. **CARDINALIDADES PERMITIDAS:**
+        Los únicos valores válidos para "fromMultiplicity" y "toMultiplicity" son:
+        ["1..1", "0..1", "1..*", "0..*"]
+        ➜ Cualquier otro valor será inválido.
+
+        8. **REGLA PARA ASOCIACIONES RECURSIVAS:**
+        En la ASOCIACIÓN SIMPLE RECURSIVA (cuando 'from' y 'to' son la misma clave),
+        el array 'points' DEBE SER OMITIDO para permitir que el algoritmo de GoJS genere automáticamente el bucle limpio.
+
+        9. **REGLAS ESPECIALES PARA LINKS DE CLASE DE ASOCIACIÓN:**
+            a. Los links que unen las clases base al nodo "AssociationPoint" deben tener "category": "AssociationClassLink" y "dashed": false (línea sólida).
+            b. El link que une el nodo "AssociationPoint" a la Clase de Asociación debe tener "category": "AssociationClassLink" y "dashed": true (línea punteada).
             c. NINGÚN link generado en el contexto de una Clase de Asociación debe llevar el campo "relationshipName".
             d. Los links deben omitir 'relationshipType' para que GoJS aplique el estilo por 'category'.
             e. **Los links de Clase de Asociación (todos los tres) DEBEN OMITIR los campos 'fromMultiplicity' y 'toMultiplicity'.**
 
-        7. Todo el JSON debe estar en español, incluidos nombres de clases, atributos y relaciones.
-        8. No devuelvas nada más que el JSON, sin explicaciones ni comentarios.
+        10. Todo el JSON debe estar en español, incluidos nombres de clases, atributos y relaciones.
+
         ***GUÍA DE TIPOS DE RELACIÓN GoJS-UML (Para crear o modificar links):***
         El campo "relationshipType" es clave para definir el tipo de enlace. Siempre debe usarse uno de los siguientes valores:
 
@@ -371,14 +423,19 @@ El campo "relationshipType" es clave para definir el tipo de enlace. Siempre deb
         | :--- | :--- | :--- | :--- | :--- |
         | **Herencia** | "Inheritance" | Línea sólida con flecha triangular vacía. | Subclase | Superclase |
         | **Realización** | "Realization" | Línea discontinua con flecha triangular vacía. | Clase que implementa | Interfaz |
-        | **Composición** | "Composition" | Línea sólida con diamante sólido (negro) en 'from'. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (contenida) |
-        | **Agregación** | "Aggregation" | Línea sólida con diamante vacío (blanco) en 'from'. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (agregada) |
+        | **Composición** | "Composition" | Línea sólida con diamante sólido (negro) **solo en el extremo 'from'**. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (contenida) |
+        | **Agregación** | "Aggregation" | Línea sólida con diamante vacío (blanco) **solo en el extremo 'from'**. **SIN MULTIPLICIDAD** | El "Todo" (contenedor) | La "Parte" (agregada) |
         | **Dependencia** | "Dependency" | Línea discontinua con flecha abierta. **relationshipName fijo: <<Dependency>>** | Clase dependiente/cliente | Clase proveedora/servicio |
         | **Uso** | "Usage" | Mismo que Dependencia, pero generalmente con 'relationshipName': "<<use>>". | Clase que usa | Recurso usado |
         | **Asociación** | "Association" | Línea sólida sin puntas especiales. Usar 'fromMultiplicity' y 'toMultiplicity' para cardinalidad. EL CAMPO "relationshipName" DEBE ESTAR PRESENTE. | Cualquiera | Cualquiera |
 
+        **NOTA IMPORTANTE SOBRE COMPOSICIÓN Y AGREGACIÓN:**
+        ➜ El rombo (lleno o vacío) **solo debe aparecer en el extremo 'from'**, nunca en ambos lados.
+        ➜ Si el generador detecta rombos duplicados, debe corregir automáticamente para que solo el extremo 'from' lo conserve.
+
         **Nota sobre Asociación:** Si la asociación es direccional, se debe usar una plantilla GoJS con flecha para ese tipo de link, pero el relationshipType base sigue siendo "Association". El JSON solo necesita el relationshipType correcto para que GoJS aplique el estilo.
-                            """;
+
+        """;
     public JsonNode generarDesdeImagenBase64(String base64Image) {
     if (base64Image == null || base64Image.isEmpty()) {
         throw new IllegalArgumentException("La imagen en base64 es obligatoria.");
